@@ -1,47 +1,57 @@
-import express, { Express, Request, Response } from 'express'
-import bodyParser from 'body-parser'
-import Authrite from 'authrite-express'
-import fs from 'fs'
+import express, { Express, Request, Response } from 'express';
+import bodyParser from 'body-parser';
+import Authrite from 'authrite-express';
+import PacketPay from '@packetpay/express';  // Import PacketPay
+import fs from 'fs';
 
 // Let TypeScript know there is possibly an authrite prop on incoming requests
 declare module 'express-serve-static-core' {
   interface Request {
     authrite?: {
-      identityKey: string
-    }
-    certificates?: any
+      identityKey: string;
+    };
+    certificates?: any;
   }
 }
 
-const app: Express = express()
-const port = 3000
+// Extend the Request type to include the packetpay property
+declare module 'express-serve-static-core' {
+  interface Request {
+    packetpay?: {
+      satoshisPaid: number;
+      reference: string;
+    };
+  }
+}
+
+const app: Express = express();
+const port = 3000;
 
 // Define the server private key and base URL
 const serverPrivateKey = fs.readFileSync('server-private-key.hex', 'utf8').trim(); // Load private key from a file
-const baseUrl = 'http://localhost:3000' // Base URL of application
+const baseUrl = 'http://localhost:3000'; // Base URL of application
 
 // Middleware
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({ extended: true }))
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // CORS Headers
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*')
-  res.header('Access-Control-Allow-Headers', '*')
-  res.header('Access-Control-Allow-Methods', '*')
-  res.header('Access-Control-Expose-Headers', '*')
-  res.header('Access-Control-Allow-Private-Network', 'true')
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Allow-Methods', '*');
+  res.header('Access-Control-Expose-Headers', '*');
   if (req.method === 'OPTIONS') {
-    res.sendStatus(200)
+    res.sendStatus(200);
   } else {
-    next()
+    next();
   }
-})
+});
 
 // Non-protected route
 app.get('/non-protected', (req: Request, res: Response) => {
-  res.json({ message: 'This is a non-protected route' })
-})
+  res.json({ message: 'This is a non-protected route' });
+});
 
 // Use Authrite middleware to validate requests
 app.use(
@@ -49,24 +59,49 @@ app.use(
     serverPrivateKey,
     baseUrl,
   })
-)
+);
 
-// Protected route
-app.post('/protected', (req: Request, res: Response) => {
-  if (req.authrite && req.authrite.identityKey) {
-    const userIdentityKey = req.authrite.identityKey
-    console.log('Authenticated User Identity Key:', userIdentityKey)
+// Configure PacketPay middleware
+app.use(
+  PacketPay({
+    serverPrivateKey,  // Use the same private key for Authrite and PacketPay
+    ninjaConfig: {
+      dojoURL: 'https://staging-dojo.babbage.systems',  // URL for the dojo payment service
+    },
+    calculateRequestPrice: (req: Request) => {
+      // Set the price for weather route, 333 satoshis
+      if (req.originalUrl === '/weather') {
+        return 333;  // Price for accessing weather data
+      }
+      return 100;  // Default price for other routes (if any)
+    }
+  })
+);
+
+// Protected route for payment and weather data
+app.post('/weather', async (req: Request, res: Response) => {
+  try {
+    console.log('Payment request:', req.packetpay);
     
-    res.json({
-      message: `Authenticated user identity key: ${userIdentityKey}`,
-    })
-  } else {
-    console.log('Unauthorized access attempt.')
-    res.status(401).json({ message: 'Unauthorized' })
+    if ((req.packetpay?.satoshisPaid ?? 0) >= 333) {
+      console.log(`Payment received: ${req.packetpay?.satoshisPaid} satoshis`);
+
+      const response = await fetch('https://openweathermap.org/data/2.5/weather?id=5746545&appid=439d4b804bc8187953eb36d2a8c26a02', { method: 'GET' });
+      const weatherData = await response.json();
+
+      console.log('Weather data fetched:', weatherData);
+      res.json(weatherData);
+    } else {
+      console.log('Insufficient payment:', req.packetpay?.satoshisPaid);
+      res.status(402).json({ message: 'Payment required: 333 satoshis' });
+    }
+  } catch (error) {
+    console.error('Error fetching weather data:', error);
+    res.status(500).json({ error: 'Failed to fetch weather data' });
   }
-})
+});
 
 // Start the server
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`)
-})
+  console.log(`Server is running on port ${port}`);
+});
