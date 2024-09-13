@@ -2,7 +2,10 @@ import express, { Express, Request, Response } from 'express';
 import bodyParser from 'body-parser';
 import Authrite from 'authrite-express';
 import PacketPay from '@packetpay/express';  // Import PacketPay
-import fs from 'fs';
+import dotenv from 'dotenv';
+
+// Load environment variables from the .env file
+dotenv.config();
 
 // Let TypeScript know there is possibly an authrite prop on incoming requests
 declare module 'express-serve-static-core' {
@@ -24,12 +27,17 @@ declare module 'express-serve-static-core' {
   }
 }
 
+// Initialize Express app and set port
 const app: Express = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
-// Define the server private key and base URL
-const serverPrivateKey = fs.readFileSync('server-private-key.hex', 'utf8').trim(); // Load private key from a file
-const baseUrl = 'http://localhost:3000'; // Base URL of application
+// Define the server private key and base URL from environment variables
+const serverPrivateKey = process.env.SERVER_PRIVATE_KEY;
+const baseUrl = process.env.HOSTING_DOMAIN || 'http://localhost:3000';  // Fallback to localhost if not defined
+
+if (!serverPrivateKey) {
+  throw new Error("SERVER_PRIVATE_KEY is not defined in the .env file");
+}
 
 // Middleware
 app.use(bodyParser.json());
@@ -64,7 +72,7 @@ app.use(
 // Configure PacketPay middleware
 app.use(
   PacketPay({
-    serverPrivateKey,  // Use the same private key for Authrite and PacketPay
+    serverPrivateKey,
     ninjaConfig: {
       dojoURL: 'https://staging-dojo.babbage.systems',  // URL for the dojo payment service
     },

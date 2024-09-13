@@ -1,0 +1,21 @@
+# Node.js dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Environment Variables
+.env
+
+# Miscellaneous
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+
+# Ignore build outputs
+dist/
+build/
